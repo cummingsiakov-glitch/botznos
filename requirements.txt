@@ -1,0 +1,4 @@
+aiohttp
+aiogram==2.25.1
+telethon
+requests
