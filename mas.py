@@ -17,7 +17,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 TOKEN = "8684585914:AAEL7rsodIVd1lVrVNWH8G5gYTNTBkkj-yM"
 CHANNEL_ID = -1001896110175      
-MOD_CHAT_ID = -1004492618747     
+MOD_CHAT_ID = -1001717282111     
 RULES_LINK = "https://t.me/masayodoempirerules"
 COMMENTS_CHAT_ID = -1001697815994 
 
