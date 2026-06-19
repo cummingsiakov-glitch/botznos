@@ -38,21 +38,24 @@ class RegForm(StatesGroup):
     waiting_universe = State()
     waiting_players = State()
     waiting_conditions = State()
+    waiting_format = State()      
     waiting_photo = State()
     waiting_photo2 = State()
 
 # ---------- КЛАВИАТУРЫ ----------
 
 def get_main_kb():
-    """Инлайн-клавиатура для выбора типа регистрации"""
+    """Инлайн-клавиатура для выбора типа регистрации с цветными кнопками"""
     buttons = [
-        [InlineKeyboardButton(text="📝 Мнение ", callback_data="reg_opinion", style="primary")],
-        [InlineKeyboardButton(text="⚔️ ПБ ⚔️", callback_data="reg_pb", style="danger")]
+        [
+            InlineKeyboardButton(text="📝 Мнение ", callback_data="reg_opinion", style="primary"),
+            InlineKeyboardButton(text="⚔️ ПБ ⚔️", callback_data="reg_pb", style="primary")
+        ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_confirm_kb():
-    """Инлайн-клавиатура подтверждения"""
+    """Инлайн-клавиатура подтверждения с цветными кнопками"""
     buttons = [
         [InlineKeyboardButton(text="На модерацию ✅", callback_data="confirm_send", style="success")],
         [InlineKeyboardButton(text="Отмена ❌", callback_data="cancel", style="danger")]
@@ -61,7 +64,6 @@ def get_confirm_kb():
 
 def get_restart_kb():
     """Reply-клавиатура с кнопкой перезапуска (всегда видна внизу)"""
-    # ⚠️ Для reply-кнопок параметр style (цвет) не поддерживается Telegram API
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="🤖 Перезапустить")]],
         resize_keyboard=True
@@ -72,12 +74,10 @@ def get_restart_kb():
 async def show_main_menu(message: types.Message, state: FSMContext):
     """Показывает главное меню: инлайн-выбор + reply-кнопка перезапуска"""
     await state.clear()
-    # Сообщение с инлайн-кнопками
     await message.answer(
         "Салам, статюганище! Выбери тип регистрации:",
         reply_markup=get_main_kb()
     )
-    # Отдельное сообщение с reply-клавиатурой (она останется внизу)
     await message.answer(
         "Для перезапуска бота нажмите кнопку ниже:",
         reply_markup=get_restart_kb()
@@ -234,6 +234,18 @@ async def process_players(message: types.Message, state: FSMContext):
 @dp.message(RegForm.waiting_conditions)
 async def process_cond(message: types.Message, state: FSMContext):
     await state.update_data(conditions=message.text)
+    data = await state.get_data()
+    if data['reg_type'] == 'reg_pb':
+        await state.set_state(RegForm.waiting_photo)
+        await message.answer("Отправь арт или видео (эдит)..")
+    else:
+        # Для мнений спрашиваем формат
+        await state.set_state(RegForm.waiting_format)
+        await message.answer("Отправь формат (например: ПБ, ГЧ) или напиши 'нет'..")
+
+@dp.message(RegForm.waiting_format)
+async def process_format(message: types.Message, state: FSMContext):
+    await state.update_data(format=message.text)
     await state.set_state(RegForm.waiting_photo)
     await message.answer("Отправь арт или видео (эдит)..")
 
@@ -256,45 +268,77 @@ async def process_photo2(message: types.Message, state: FSMContext):
 
 async def finalize_preview(message, state):
     data = await state.get_data()
-    author_mention = f'<a href="tg://user?id={message.from_user.id}">{html.quote(message.from_user.first_name)}</a>'
     
     if data['reg_type'] == 'reg_opinion':
-        unis = "\n".join([f"➤ {html.quote(u.strip())}" for u in data['universe'].replace(',', '\n').split('\n') if u.strip()])
-        conds = "Не" if data['conditions'].lower() == "нет" else html.quote(data['conditions'])
-    
-        custom_footer = " Ꮶᴛᴏ нибудь жᴇᴧᴀᴇᴛ дᴀᴛь ᴇʍу ᴏᴛᴨᴏᴩ ʙ ɸᴏᴩʍᴀᴛᴇ ᴨᴩуɸбᴀᴛᴛᴧ?"
+        # Авторство
+        if message.from_user.username:
+            author_text = f"@{html.quote(message.from_user.username)}"
+        else:
+            author_text = f'<a href="tg://user?id={message.from_user.id}">{html.quote(message.from_user.first_name)}</a>'
+        author_str = f"© Позиция ➥ {author_text}"
+        
+        # Персонаж
+        char_name = html.quote(data['name'])
+        
+        # Вселенные: превращаем в список, первый элемент – вселенная персонажа
+        all_verses = [u.strip() for u in data['universe'].replace(',', '\n').split('\n') if u.strip()]
+        first_verse = all_verses[0] if all_verses else "Неизвестная вселенная"
+        first_verse_q = html.quote(first_verse)
+        
+        header = f"✎ {char_name} из Вселенной «{first_verse_q}» уничтожает всех нижеперечисленных"
+        
+        # Список вселенных (отображаем все введённые)
+        verses_list = "\n".join([f"➣ {html.quote(v)}" for v in all_verses])
+        
+        # Условия
+        conds_text = "Нет условий" if data['conditions'].lower() == "нет" else html.quote(data['conditions'])
+        
+        # Формат
+        raw_format = data.get('format', '')
+        if raw_format.lower() == "нет" or not raw_format.strip():
+            format_text = "Не указан"
+        else:
+            format_text = html.quote(raw_format)
         
         caption = (
-            f"<b>— автор мнения:</b> {author_mention}\n\n"
-            f"<u><b>{html.quote(data['name'])}</b></u> <b>аннигилирует всех персонажей из ниже представленных вселенных:</b>\n"
-            f"<blockquote><b>{unis}</b></blockquote>\n"
-            f"<blockquote><b>Условия баттла: {conds}</b></blockquote>\n"
-            f"{custom_footer}"
+            f"<b>👤 Персональное мнение ⤵</b>\n"
+            f"<b>{author_str}</b>\n"
+            f"<b>{header}</b>\n\n"
+            f"<blockquote><b>{verses_list}</b></blockquote>\n\n"
+            f"<b>┎Формат ➲ {format_text}</b>\n"
+            f"<b>┖Условия ➲ {conds_text}</b>"
         )
-    else:
-        chars = [html.quote(c.strip()) for c in data['name'].split('\n')]
-        universes = [html.quote(u.strip()) for u in data['universe'].split('\n')]
-        players = [html.quote(p.strip()) for p in data['players'].split('\n')]
         
-        p1, p2 = (chars[0] if len(chars)>0 else "P1"), (chars[1] if len(chars)>1 else "P2")
-        u1, u2 = (universes[0] if len(universes)>0 else "U1"), (universes[1] if len(universes)>1 else "U2")
-        pl1, pl2 = (players[0] if len(players)>0 else "@id1"), (players[1] if len(players)>1 else "@id2")
+        await state.update_data(final_caption=caption)
         
-        caption = (
-            f"<blockquote><b>ПЕРСОНАЛЬНЫЙ ПРУФ-БАТТЛ</b></blockquote>\n\n"
-            f"<b>Player 1:</b> {pl1}\n"
-            f"<b>{p1} — «{u1}»</b>\n\n"
-            f"<b>       * V-E-R-S-U-S *</b>\n\n"
-            f"<b>{p2} — «{u2}»</b>\n"
-            f"<b>Player 2:</b> {pl2}\n\n"
-            f" <b>「<a href='{RULES_LINK}'>Правила боёв</a>」</b>"
-        )
-
-    await state.update_data(final_caption=caption)
-    if data['reg_type'] == 'reg_opinion':
         target = bot.send_photo if data['type1'] == 'photo' else bot.send_video
         await target(message.chat.id, data['photo1'], caption=caption, parse_mode="HTML", reply_markup=get_confirm_kb())
-    else:
+        
+    else:  # reg_pb
+        # ЗАМЕНЕННЫЙ БЛОК ФОРМАТА ПБ
+        chars = [html.quote(c.strip()) for c in data['name'].split('\n')]
+        players = [html.quote(p.strip()) for p in data['players'].split('\n')]
+        
+        p1, p2 = (chars[0] if len(chars)>0 else "Персонаж 1"), (chars[1] if len(chars)>1 else "Персонаж 2")
+        pl1, pl2 = (players[0] if len(players)>0 else "@user1"), (players[1] if len(players)>1 else "@user2")
+        
+        conds_text = "Нет условий" if data['conditions'].lower() == "нет" else html.quote(data['conditions'])
+        
+        caption = (
+            f"⚔️ 𝙿𝙴𝚁𝚂𝙾𝙽𝙰𝙻 𝙿𝚁𝙾𝙾𝙵 𝙱𝙰𝚃𝚃𝙻𝙴 ⚔️\n\n"
+            f"         🎮 𝙿𝚕𝚊𝚢𝚎𝚛 #𝟷 🎮\n\n"
+            f"{p1} // {pl1}\n\n"
+            f"                     𝚅𝚂    \n\n"
+            f"         🎮 𝙿𝚕𝚊𝚢𝚎𝚛 #𝟸 🎮\n\n"
+            f"{p2} // {pl2}\n\n"
+            f"📖 𝚁𝚞𝚕𝚎𝚜 𝚏𝚘𝚛 𝚙𝚛𝚘𝚘𝚏𝚋𝚊𝚝𝚝𝚕𝚎: <a href='{RULES_LINK}'>ссылка на правила</a>\n\n"
+            f"📋 𝙵𝚒𝚡𝚎𝚜: {conds_text}\n\n"
+            f"🍀 𝙶𝚘𝚘𝚍 𝚕𝚞𝚌𝚔 𝚠𝚒𝚝𝚑 𝚝𝚑𝚎 𝚙𝚛𝚘𝚘𝚏 𝚋𝚊𝚝𝚝𝚕𝚎"
+        )
+        # ------------------------
+        
+        await state.update_data(final_caption=caption)
+        
         m1 = InputMediaPhoto(media=data['photo1'], caption=caption, parse_mode="HTML") if data['type1'] == 'photo' else InputMediaVideo(media=data['photo1'], caption=caption, parse_mode="HTML")
         m2 = InputMediaPhoto(media=data['photo2']) if data['type2'] == 'photo' else InputMediaVideo(media=data['photo2'])
         await bot.send_media_group(message.chat.id, media=[m1, m2])
@@ -309,8 +353,8 @@ async def send_to_mod(callback: types.CallbackQuery, state: FSMContext):
     pending_posts[post_id] = data
 
     kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="Опубликовать ", callback_data=f"publish_{post_id}", style="success"),
-        InlineKeyboardButton(text="Отменить ", callback_data=f"reject_{post_id}", style="danger")
+        InlineKeyboardButton(text="Опубликовать ✅", callback_data=f"publish_{post_id}", style="success"),
+        InlineKeyboardButton(text="Отменить ❌", callback_data=f"reject_{post_id}", style="danger")
     ]])
     
     if data['reg_type'] == 'reg_opinion':
