@@ -36,6 +36,7 @@ moderator_stats = {}
 class RegForm(StatesGroup):
     waiting_name = State()
     waiting_universe = State()
+    waiting_char_universe = State()  # новое состояние для вселенной персонажа (мнение)
     waiting_players = State()
     waiting_conditions = State()
     waiting_format = State()      
@@ -202,8 +203,11 @@ async def restart_handler(message: types.Message, state: FSMContext):
 async def start_reg(callback: types.CallbackQuery, state: FSMContext):
     await state.update_data(reg_type=callback.data)
     await state.set_state(RegForm.waiting_name)
-    text = "Отправь имя персонажа.." if callback.data == "reg_opinion" else "Отправь имена персонажей (с новой строки).."
-    await callback.message.answer(text)
+    if callback.data == "reg_opinion":
+        text = "<b>Отправь имя персонажа..</b>"
+    else:
+        text = "<b>Отправь имена персонажей (с новой строки)..</b>"
+    await callback.message.answer(text, parse_mode="HTML")
     await callback.answer()
 
 # ---------- ЭТАПЫ РЕГИСТРАЦИИ ----------
@@ -212,7 +216,12 @@ async def start_reg(callback: types.CallbackQuery, state: FSMContext):
 async def process_name(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text)
     await state.set_state(RegForm.waiting_universe)
-    await message.answer("Отправь вселенные (каждую с новой строки или через запятую)..")
+    data = await state.get_data()
+    if data['reg_type'] == 'reg_opinion':
+        text = "<b>Отправь вселенные или персонажей которые он аннигилирует (каждого с новой строки или через запятую)..</b>"
+    else:
+        text = "<b>Отправь вселенные (каждую с новой строки или через запятую)..</b>"
+    await message.answer(text, parse_mode="HTML")
 
 @dp.message(RegForm.waiting_universe)
 async def process_universe(message: types.Message, state: FSMContext):
@@ -220,16 +229,27 @@ async def process_universe(message: types.Message, state: FSMContext):
     data = await state.get_data()
     if data['reg_type'] == 'reg_pb':
         await state.set_state(RegForm.waiting_players)
-        await message.answer("Отправь юзернеймы игроков (каждый с новой строки)..")
+        text = "<b>Отправь юзернеймы игроков (каждый с новой строки)..</b>"
+        await message.answer(text, parse_mode="HTML")
     else:
-        await state.set_state(RegForm.waiting_conditions)
-        await message.answer("Отправь условия (или напиши 'нет')..")
+        # для мнения — запрашиваем вселенную персонажа отдельно
+        await state.set_state(RegForm.waiting_char_universe)
+        text = "<b>Из какой вселенной персонаж?</b>"
+        await message.answer(text, parse_mode="HTML")
+
+@dp.message(RegForm.waiting_char_universe)
+async def process_char_universe(message: types.Message, state: FSMContext):
+    await state.update_data(char_universe=message.text)
+    await state.set_state(RegForm.waiting_conditions)
+    text = "<b>Отправь условия (или напиши 'нет')..</b>"
+    await message.answer(text, parse_mode="HTML")
 
 @dp.message(RegForm.waiting_players)
 async def process_players(message: types.Message, state: FSMContext):
     await state.update_data(players=message.text)
     await state.set_state(RegForm.waiting_conditions)
-    await message.answer("Отправь условия (или напиши 'нет')..")
+    text = "<b>Отправь условия (или напиши 'нет')..</b>"
+    await message.answer(text, parse_mode="HTML")
 
 @dp.message(RegForm.waiting_conditions)
 async def process_cond(message: types.Message, state: FSMContext):
@@ -237,17 +257,20 @@ async def process_cond(message: types.Message, state: FSMContext):
     data = await state.get_data()
     if data['reg_type'] == 'reg_pb':
         await state.set_state(RegForm.waiting_photo)
-        await message.answer("Отправь арт или видео (эдит)..")
+        text = "<b>Отправь арт или видео (эдит)..</b>"
+        await message.answer(text, parse_mode="HTML")
     else:
         # Для мнений спрашиваем формат
         await state.set_state(RegForm.waiting_format)
-        await message.answer("Отправь формат (например: ПБ, ГЧ) или напиши 'нет'..")
+        text = "<b>Отправь формат (например: ПБ, ГЧ) или напиши 'нет'..</b>"
+        await message.answer(text, parse_mode="HTML")
 
 @dp.message(RegForm.waiting_format)
 async def process_format(message: types.Message, state: FSMContext):
     await state.update_data(format=message.text)
     await state.set_state(RegForm.waiting_photo)
-    await message.answer("Отправь арт или видео (эдит)..")
+    text = "<b>Отправь арт или видео (эдит)..</b>"
+    await message.answer(text, parse_mode="HTML")
 
 @dp.message(RegForm.waiting_photo, F.photo | F.video)
 async def process_photo1(message: types.Message, state: FSMContext):
@@ -256,7 +279,8 @@ async def process_photo1(message: types.Message, state: FSMContext):
     data = await state.get_data()
     if data['reg_type'] == 'reg_pb':
         await state.set_state(RegForm.waiting_photo2)
-        await message.answer("Отправь второй арт или видео..")
+        text = "<b>Отправь второй арт или видео..</b>"
+        await message.answer(text, parse_mode="HTML")
     else:
         await finalize_preview(message, state)
 
@@ -280,14 +304,15 @@ async def finalize_preview(message, state):
         # Персонаж
         char_name = html.quote(data['name'])
         
-        # Вселенные: превращаем в список, первый элемент – вселенная персонажа
+        # Вселенные (список для уничтожения)
         all_verses = [u.strip() for u in data['universe'].replace(',', '\n').split('\n') if u.strip()]
-        first_verse = all_verses[0] if all_verses else "Неизвестная вселенная"
-        first_verse_q = html.quote(first_verse)
+        # Вселенная персонажа – берём из нового поля
+        char_universe = data.get('char_universe', 'Неизвестная вселенная')
+        first_verse_q = html.quote(char_universe)
         
         header = f"✎ {char_name} из Вселенной «{first_verse_q}» уничтожает всех нижеперечисленных"
         
-        # Список вселенных (отображаем все введённые)
+        # Список вселенных/персонажей для уничтожения
         verses_list = "\n".join([f"➣ {html.quote(v)}" for v in all_verses])
         
         # Условия
@@ -315,7 +340,6 @@ async def finalize_preview(message, state):
         await target(message.chat.id, data['photo1'], caption=caption, parse_mode="HTML", reply_markup=get_confirm_kb())
         
     else:  # reg_pb
-        # ЗАМЕНЕННЫЙ БЛОК ФОРМАТА ПБ
         chars = [html.quote(c.strip()) for c in data['name'].split('\n')]
         players = [html.quote(p.strip()) for p in data['players'].split('\n')]
         
@@ -335,7 +359,6 @@ async def finalize_preview(message, state):
             f"📋 𝙵𝚒𝚡𝚎𝚜: {conds_text}\n\n"
             f"🍀 𝙶𝚘𝚘𝚍 𝚕𝚞𝚌𝚔 𝚠𝚒𝚝𝚑 𝚝𝚑𝚎 𝚙𝚛𝚘𝚘𝚏 𝚋𝚊𝚝𝚝𝚕𝚎"
         )
-        # ------------------------
         
         await state.update_data(final_caption=caption)
         
