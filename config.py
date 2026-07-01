@@ -23,7 +23,7 @@ BOT_TOKEN = "8883702079:AAGMrsgXfYKQHVKeLJZOm0F3lYpoAvljiWU"
 #  МОДЕЛЬ ГЕНЕРАЦИИ ИЗОБРАЖЕНИЙ
 # ─────────────────────────────────────────────────────────────────────────────
 # Идентификатор модели в Google Generative Language API.
-MODEL_NAME = "nano-banana-2-lite"
+MODEL_NAME = "imagen-3.0-generate-002"
 
 # Базовый эндпоинт Google Generative Language API.
 API_BASE = "https://generativelanguage.googleapis.com/v1beta"
